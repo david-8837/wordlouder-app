@@ -9,22 +9,28 @@ When served locally, it runs at:
 ## 📂 Project Structure
 ```text
 worklouder-web/
-├── index.html            # Main Work Louder keymapper & configurator
-├── cheat_sheet.html      # Floating shortcut HUD overlay
-├── radial_menu.html      # Circular radial pie menu overlay
-├── mock_bridge.js        # Zero-backend browser emulation layer
-├── favicon.ico           # Official Work Louder icon
-├── assets/               # Bundled JavaScript, CSS, SVGs & icons
-└── Launch_Website.bat    # 1-click launcher
+├── index.html                       # Main Work Louder keymapper & configurator
+├── cheat_sheet.html                 # Floating shortcut HUD overlay
+├── radial_menu.html                 # Circular radial pie menu overlay
+├── mock_bridge.js                   # Zero-backend browser emulation layer
+├── FEATURES_AND_ARCHITECTURE_GUIDE.md # Complete feature breakdown & DIY hardware guide
+├── favicon.ico                      # Official Work Louder icon
+├── assets/                          # Bundled JavaScript, CSS, SVGs & icons
+└── Launch_Website.bat               # 1-click launcher
 ```
+
+## 📖 In-Depth Documentation & DIY Hardware Guide
+For an exhaustive breakdown of every screen, data model, state store, and how to connect this frontend to your own physical custom macro pad (RP2040, Arduino, QMK via WebHID), see:
+👉 **[FEATURES_AND_ARCHITECTURE_GUIDE.md](FEATURES_AND_ARCHITECTURE_GUIDE.md)**
 
 ## 🛠 Features Included
 - **No Backend / No Electron Required**: Runs in any modern browser (Chrome, Edge, Firefox, Safari).
 - **Auto-Connected Simulation**: Automatically loads the **Creator Micro V2** profile, layers, keymaps, and encoders.
-- **Hardware Switcher**: Floating HUD at bottom-right lets you toggle between:
+- **Hardware Switcher**: Top-right native header badge lets you toggle between:
   - **Creator Micro V2**
   - **Nomad [E]**
   - **Work Louder Knob**
+- **Action Drawer**: Pre-expanded by default with all basic keys, actions, and presets.
 - **Full Tabs Access**: Keymap editor, Presets browser, Widgets, and App Settings.
 
 ## 🌐 Deploy to Free Web Hosting
