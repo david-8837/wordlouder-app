@@ -24,16 +24,24 @@ This guide provides an end-to-end breakdown of every screen, feature, data model
    - [3.5 RGB Lighting Customization](#35-rgb-lighting-customization)
    - [3.6 Profile Saving and Loading](#36-profile-saving-and-loading)
    - [3.7 Configuration File Formats](#37-configuration-file-formats)
-4. [Internal Architecture & Data Models](#4-internal-architecture--data-models)
-   - [4.1 Zustand Store Architecture](#41-zustand-store-architecture)
-   - [4.2 The Keyboard Factory](#42-the-keyboard-factory)
-   - [4.3 Keycode & Action Taxonomy](#43-keycode--action-taxonomy)
-5. [How the Mock Bridge Works (`mock_bridge.js`)](#5-how-the-mock-bridge-works)
-6. [Reusing This UI for Your Custom DIY Macro Pad](#6-reusing-this-ui-for-your-custom-diy-macro-pad)
-   - [6.1 WebHID Integration Architecture](#61-webhid-integration-architecture)
-   - [6.2 Communication Protocol (Raw HID Packets)](#62-communication-protocol-raw-hid-packets)
-   - [6.3 Firmware Implementation Guide (QMK / RP2040 Arduino)](#63-firmware-implementation-guide-qmk--rp2040-arduino)
-7. [Summary](#7-summary)
+   - [3.8 Auto-Profile Switching Engine](#38-auto-profile-switching-engine)
+   - [3.9 The 3-Window System (Main, Cheat Sheet, Radial Menu)](#39-the-3-window-system-main-cheat-sheet-radial-menu)
+4. [Hardware Protocol & Low-Level Communication](#4-hardware-protocol--low-level-communication)
+   - [4.1 USB Composite Device Interfaces](#41-usb-composite-device-interfaces)
+   - [4.2 Raw HID Packet Framing & Framing Format](#42-raw-hid-packet-framing--framing-format)
+   - [4.3 Command Protocol Specification](#43-command-protocol-specification)
+   - [4.4 EEPROM & Flash Memory Layout](#44-eeprom--flash-memory-layout)
+   - [4.5 DFU & Bootloader Flashing Protocol](#45-dfu--bootloader-flashing-protocol)
+5. [Internal Architecture & Data Models](#5-internal-architecture--data-models)
+   - [5.1 Zustand Store Architecture](#51-zustand-store-architecture)
+   - [5.2 The Keyboard Factory](#52-the-keyboard-factory)
+   - [5.3 Keycode & Action Taxonomy](#53-keycode--action-taxonomy)
+6. [How the Mock Bridge Works (`mock_bridge.js`)](#6-how-the-mock-bridge-works)
+7. [Reusing This UI for Your Custom DIY Macro Pad](#7-reusing-this-ui-for-your-custom-diy-macro-pad)
+   - [7.1 WebHID Integration Architecture](#71-webhid-integration-architecture)
+   - [7.2 Communication Protocol (Raw HID Packets)](#72-communication-protocol-raw-hid-packets)
+   - [7.3 Firmware Implementation Guide (QMK / RP2040 Arduino)](#73-firmware-implementation-guide-qmk--rp2040-arduino)
+8. [Summary](#8-summary)
 
 ---
 
@@ -451,9 +459,221 @@ Profiles are exchanged and stored using a clean, human-readable JSON schema.
 
 ---
 
-## 4. Internal Architecture & Data Models
+### 3.8 Auto-Profile Switching Engine
 
-### 4.1 Zustand Store Architecture
+The Auto-Profile Switching engine automatically adapts the macro pad's active layout based on whichever window or application is currently in foreground focus on the operating system.
+
+```text
++-----------------------+
+| Active OS Application | (e.g. Adobe Photoshop, Figma, VSCode, Blender)
++-----------┬-----------+
+            │ (User switches window / Alt+Tab)
+            ▼
++-----------------------+
+| Native Process Poll   | Windows: GetForegroundWindow() -> GetWindowModuleFileName()
+| or Event Hook         | macOS:   NSWorkspace.shared.frontmostApplication
++-----------┬-----------+
+            │ processName: "Photoshop.exe", bundleId: "com.adobe.Photoshop"
+            ▼
++-----------------------+
+| Profile Matcher       | Iterates profiles for: profile.linkedAppId === activeApp
++-----------┬-----------+
+            │ Match Found: Profile "Photoshop Editing" (id: 2)
+            ▼
++-----------------------+       sync HID       +--------------------------+
+| Zustand Store Switch  | ───────────────────> | Microcontroller Switch   |
+| profileSelected: 2    |                      | Hardware Layer / LCD OSD |
++-----------------------+                      +--------------------------+
+```
+
+#### Key Mechanics:
+1. **Application Linking**:
+   - Each layer or profile has an optional `linkedAppId` field (e.g. `com.adobe.Photoshop` or `C:\Program Files\Adobe\Photoshop.exe`).
+   - The user selects the target executable via an OS file dialog or a dropdown of running system processes.
+2. **Foreground Polling Rate**:
+   - Desktop background daemon polls active foreground windows every 250ms–500ms using low-overhead OS hooks (`SetWinEventHook` on Windows; `NSWorkspaceDidActivateApplicationNotification` on macOS).
+3. **Seamless Hardware Switch**:
+   - When a match is detected:
+     1. The desktop app updates the UI active profile.
+     2. A 4-byte HID packet (`0x0A [PROFILE_ID]`) is dispatched to the physical hardware.
+     3. The device's onboard OLED/LCD display flashes the application icon or profile name.
+     4. Onboard RGB lighting shifts to that application's designated branding color.
+
+---
+
+### 3.9 The 3-Window System (Main, Cheat Sheet, Radial Menu)
+
+Work Louder Input is architected around **three synchronized window entities** working concurrently to deliver high productivity without interrupting full-screen creative workflows.
+
+```text
+                  ┌─────────────────────────────────────────┐
+                  │          Central State Manager          │
+                  │   (Zustand Store / IPC Broadcast)       │
+                  └──────┬───────────────────┬──────────────┘
+                         │                   │
+         ┌───────────────┴────────┐          │
+         ▼                        ▼          ▼
+┌─────────────────┐      ┌─────────────────┐      ┌─────────────────┐
+│   Window 1:     │      │   Window 2:     │      │   Window 3:     │
+│   Main Config   │      │   Cheat Sheet   │      │   Radial Menu   │
+│                 │      │                 │      │                 │
+│ Full editor,    │      │ Frameless,      │      │ High-speed pie  │
+│ keymapping,     │      │ transparent HUD │      │ wheel menu for  │
+│ presets, & RGB. │      │ pinned on-top.  │      │ knob/dial tools.│
+└─────────────────┘      └─────────────────┘      └─────────────────┘
+```
+
+#### Detailed Window Specifications:
+
+| Window Entity | File / Route | Window Characteristics | Primary Role & User Experience |
+|---|---|---|---|
+| **1. Main Configurator** | `index.html` (`/#/main`) | Standard resizeable window with title bar, tabs, and drawer. | Deep editing: keymapping, layer creation, RGB adjustments, firmware updates, and settings. |
+| **2. Cheat Sheet HUD** | `cheat_sheet.html` | Frameless, transparent background, `alwaysOnTop: true`, `skipTaskbar: true`. | Sits quietly in the corner of your monitor while working in Blender or CAD. Dynamically highlights the current layer's keys so you never have to remember key mappings. |
+| **3. Radial Pie Menu** | `radial_menu.html` | Centered at mouse cursor, frameless, round alpha mask, instantaneous spring animation. | Pops up on screen when you click a dial knob. Moving your mouse in a circle or turning the dial scrubs through 8–16 radial tools (Color picker, Brush, Eraser, Zoom, Eyedropper). |
+
+#### Cross-Window State Synchronization:
+In the desktop app, synchronization is carried over Electron IPC channels (`ipcRenderer.send("broadcast-state")`). In our standalone web build, this synchronization operates across multiple browser tabs or iframes via the modern standard **BroadcastChannel API**:
+```javascript
+// Instant sync between index.html, cheat_sheet.html, and radial_menu.html
+const syncChannel = new BroadcastChannel("wl_window_sync");
+
+// When active layer changes in the main editor:
+syncChannel.postMessage({
+  type: "LAYER_CHANGED",
+  layerId: 1,
+  deviceType: "creator_micro_v2"
+});
+
+// In cheat_sheet.html:
+syncChannel.onmessage = (event) => {
+  if (event.data.type === "LAYER_CHANGED") {
+    renderLayerBindings(event.data.layerId);
+  }
+};
+```
+
+---
+
+## 4. Hardware Protocol & Low-Level Communication
+
+### 4.1 USB Composite Device Interfaces
+
+Work Louder macro pads enumerate as **USB Composite Human Interface Devices (HID)** with 3 distinct interface descriptors:
+
+```text
+                        ┌──────────────────────────────┐
+                        │   USB Composite Device       │
+                        │   VID: 0x3343  PID: 0x33428  │
+                        └──────────────┬───────────────┘
+                                       │
+         ┌─────────────────────────────┼─────────────────────────────┐
+         ▼                             ▼                             ▼
+┌──────────────────┐          ┌──────────────────┐          ┌──────────────────┐
+│  Interface 0     │          │  Interface 1     │          │  Interface 2     │
+│  Standard HID    │          │  Consumer HID    │          │  Raw Vendor HID  │
+│                  │          │                  │          │                  │
+│ Boot keyboard:   │          │ Media Controls:  │          │ Bidirectional:   │
+│ 6KRO / NKRO      │          │ Vol+, Play, Mute │          │ 64-byte packets  │
+│ scancodes.       │          │ (Usage Page 0x0C)│          │ for Web / Config │
+└──────────────────┘          └──────────────────┘          └──────────────────┘
+```
+
+1. **Interface 0 (Standard Keyboard)**:
+   - Emulates standard 104-key USB HID keyboard (Usage Page `0x01`, Usage `0x06`).
+   - Supports Standard Boot Protocol so keys operate in PC BIOS / UEFI.
+2. **Interface 1 (Consumer & System Control)**:
+   - Consumer Usage Page (`0x0C`) for media keys, volume step, mute, sleep, app launcher keys.
+3. **Interface 2 (Raw Vendor Configuration Pipe)**:
+   - Dedicated vendor-defined Usage Page (`0xFF60`, Usage `0x61`).
+   - Endpoint: IN/OUT 64-byte Interrupt transfers with 1ms polling interval.
+   - Used exclusively by this web interface (via WebHID) to configure EEPROM, layers, and lighting.
+
+---
+
+### 4.2 Raw HID Packet Framing & Framing Format
+
+All communication over Interface 2 uses fixed-size **64-byte packets** to guarantee uniform transfer latency and zero fragmentation across Windows, macOS, and Linux.
+
+#### Packet Anatomy:
+```text
+Byte 0      Byte 1      Byte 2      Byte 3      Byte 4..7       Byte 8..61      Byte 62..63
++-----------+-----------+-----------+-----------+---------------+---------------+-----------+
+| REPORT_ID | CMD_ID    | SEQ_NUM   | LENGTH    | ADDRESS / IDX | PAYLOAD BYTES | CHECKSUM  |
++-----------+-----------+-----------+-----------+---------------+---------------+-----------+
+```
+
+- **Byte 0 (`REPORT_ID`)**: Always `0x00` for Raw HID feature reports.
+- **Byte 1 (`CMD_ID`)**: Command identifier byte (see Command Set table below).
+- **Byte 2 (`SEQ_NUM`)**: Monotonically incrementing transaction counter (0–255) for ack matching.
+- **Byte 3 (`LENGTH`)**: Number of valid payload bytes contained in Bytes 8..61 (0 to 54 bytes).
+- **Bytes 4..7 (`ADDRESS / IDX`)**: Target layer index, key index, or memory offset (Little-Endian 32-bit).
+- **Bytes 8..61 (`PAYLOAD`)**: Keycode data, ASCII strings, or RGB values.
+- **Bytes 62..63 (`CHECKSUM`)**: CRC-16 (CCITT-FALSE) calculated over Bytes 0..61.
+
+---
+
+### 4.3 Command Protocol Specification
+
+| CMD ID | Name | Direction | Payload Parameters | Description |
+|---|---|---|---|---|
+| `0x01` | `CMD_GET_DEVICE_INFO` | Host -> Dev | None | Requests model name, hardware revision, protocol version, and layer count. |
+| `0x81` | `CMD_RESP_DEVICE_INFO` | Dev -> Host | `[VID:2][PID:2][FW_VER:2][MAX_LAYERS:1][MATRIX_ROWS:1][MATRIX_COLS:1]` | Device identification response. |
+| `0x02` | `CMD_GET_KEY` | Host -> Dev | `[LAYER:1][ROW:1][COL:1]` | Queries the assigned keycode at target matrix location. |
+| `0x03` | `CMD_SET_KEY` | Host -> Dev | `[LAYER:1][ROW:1][COL:1][KEYCODE:4]` | Assigns a keycode or action ID to the specified coordinate in RAM. |
+| `0x04` | `CMD_GET_ENCODER` | Host -> Dev | `[LAYER:1][ENC_INDEX:1]` | Queries CCW, CW, and Click actions for rotary encoder. |
+| `0x05` | `CMD_SET_ENCODER` | Host -> Dev | `[LAYER:1][ENC_INDEX:1][CCW:4][CW:4][CLICK:4]` | Binds actions to encoder rotation and switch. |
+| `0x06` | `CMD_SET_RGB_CONFIG` | Host -> Dev | `[EFFECT:1][BRIGHTNESS:1][SPEED:1][R:1][G:1][B:1]` | Adjusts global LED backlighting parameters. |
+| `0x07` | `CMD_COMMIT_FLASH` | Host -> Dev | None | Flushes staged RAM matrix changes permanently to onboard Flash/EEPROM. |
+| `0x08` | `CMD_RESET_FACTORY` | Host -> Dev | `[MAGIC: 0xDEADBEEF]` | Erases configuration partition and reloads factory defaults. |
+| `0x09` | `CMD_JUMP_BOOTLOADER`| Host -> Dev | `[MAGIC: 0xB007]` | Reboots microcontroller into USB DFU / UF2 bootloader mode. |
+| `0x0A` | `CMD_SWITCH_PROFILE` | Host -> Dev | `[PROFILE_ID:1]` | Instructs hardware to activate target profile and refresh LCD. |
+
+---
+
+### 4.4 EEPROM & Flash Memory Layout
+
+Microcontrollers (RP2040, STM32, ATmega32U4) preserve layouts in non-volatile flash memory partitioned into distinct sectors:
+
+```text
+Base Address: 0x10000000 (Flash Start)
+┌─────────────────────────────────────────────────────────────┐
+│ Sector 0: Bootloader Partition (16 KB)                     │
+├─────────────────────────────────────────────────────────────┤
+│ Sector 1: Firmware Binary (192 KB)                          │
+├─────────────────────────────────────────────────────────────┤
+│ Sector 2: Hardware Calibration & Serial Number (4 KB)       │
+├─────────────────────────────────────────────────────────────┤
+│ Sector 3: Dynamic Keymap Storage (LittleFS / EEPROM) (32 KB)│
+│   ├── Magic Header (4 bytes: "WL01")                        │
+│   ├── Layer 0 Base Matrix [Rows x Cols x 4 bytes]           │
+│   ├── Layer 1 Matrix                                        │
+│   ├── Layer 2 Matrix                                        │
+│   ├── Layer 3 Matrix                                        │
+│   ├── Encoders Config Block [NumEncoders x 12 bytes]        │
+│   ├── RGB Configuration Block (8 bytes)                     │
+│   └── Macro / Smart Action Script Buffer (4096 bytes)       │
+└─────────────────────────────────────────────────────────────┘
+```
+
+---
+
+### 4.5 DFU & Bootloader Flashing Protocol
+
+When performing firmware upgrades or firmware restoration:
+1. **Triggering Bootloader Mode**:
+   - The web app transmits `CMD_JUMP_BOOTLOADER` (`0x09`) with payload `0xB007`.
+   - Alternatively, hardware boots into DFU when holding down Key 0 (top-left key) while inserting the USB cable.
+2. **Device Enumeration in DFU**:
+   - Device disconnects from HID mode and immediately re-enumerates as a **USB DFU Device** (or a USB Mass Storage flash drive in the case of RP2040 UF2).
+3. **Flashing Firmware**:
+   - Binary image blocks (typically 256 bytes per sector) are verified with CRC32 and flashed sequentially.
+   - Upon completion, a USB RESET signal reboots the device back into normal interactive HID operating mode.
+
+---
+
+## 5. Internal Architecture & Data Models
+
+### 5.1 Zustand Store Architecture
 The entire application state is managed by a centralized Zustand store exposed globally at `window.__WL_STORE__`.
 
 Key state properties:
@@ -482,7 +702,7 @@ window.__WL_STORE__.setState({ layerSelected: 1 });
 
 ---
 
-### 4.2 The Keyboard Factory
+### 5.2 The Keyboard Factory
 The `KeyboardFactory` (exposed globally at `window.__WL_FACTORY__`) is the core engine responsible for instantiating profile models:
 ```javascript
 const factory = window.__WL_FACTORY__.instance;
@@ -499,7 +719,7 @@ const profile = factory.createProfile({
 
 ---
 
-### 4.3 Keycode & Action Taxonomy
+### 5.3 Keycode & Action Taxonomy
 
 Work Louder uses structured string keycodes based on QMK conventions:
 
@@ -514,7 +734,7 @@ Work Louder uses structured string keycodes based on QMK conventions:
 
 ---
 
-## 5. How the Mock Bridge Works (`mock_bridge.js`)
+## 6. How the Mock Bridge Works (`mock_bridge.js`)
 
 In the native desktop app, the frontend communicates with the Electron Main process via `window.electronAPI`. 
 
@@ -550,11 +770,11 @@ Because every channel returns valid asynchronous Promises, the UI behaves identi
 
 ---
 
-## 6. Reusing This UI for Your Custom DIY Macro Pad
+## 7. Reusing This UI for Your Custom DIY Macro Pad
 
 You can take this exact web interface and use it as the web configurator for your own custom physical macro pad!
 
-### 6.1 WebHID Integration Architecture
+### 7.1 WebHID Integration Architecture
 
 Modern browsers (Chrome, Edge, Opera) support the **WebHID API** (`navigator.hid`). This allows a web page to directly open a USB HID connection to a microcontroller without installing any drivers!
 
@@ -593,7 +813,7 @@ async function sendKeymapToHardware(hidDevice, layerIndex, keyIndex, keycode) {
 
 ---
 
-### 6.2 Communication Protocol (Raw HID Packets)
+### 7.2 Communication Protocol (Raw HID Packets)
 
 For DIY firmware (QMK, Arduino, CircuitPython), recommend using a standard 32-byte or 64-byte Raw HID report:
 
@@ -614,7 +834,7 @@ Common Command IDs:
 
 ---
 
-### 6.3 Firmware Implementation Guide (QMK / RP2040 Arduino)
+### 7.3 Firmware Implementation Guide (QMK / RP2040 Arduino)
 
 #### Arduino / RP2040 (`Adafruit_TinyUSB`):
 ```cpp
@@ -662,7 +882,7 @@ void raw_hid_receive(uint8_t *data, uint8_t length) {
 
 ---
 
-## 7. Summary
+## 8. Summary
 
 With this standalone distribution, you have:
 1. **A complete, production-grade frontend** for key mapping, layer management, macro creation, profile switching, and lighting controls.
