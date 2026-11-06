@@ -266,6 +266,11 @@
         window.__WL_STORE__.setState({
           phase: "completed",
           deviceInfo: activeDevice,
+          layoutSettings: {
+            deviceType: activeDevice.deviceType,
+            language: "en_us",
+            keyboardLayout: activeDevice.layoutType
+          },
           profiles: [result.newProfile],
           profileSelected: 0,
           layerSelected: 0,
