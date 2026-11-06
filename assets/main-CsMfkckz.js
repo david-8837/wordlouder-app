@@ -1,0 +1,1 @@
+import{e,j as o}from"./smart_action-DDA1Pq_I.js";import{A as t}from"./device_config_data-NyrEEVSW.js";e.createRoot(document.getElementById("root")).render(o.jsx(t,{}));postMessage({payload:"removeLoading"},"*");
