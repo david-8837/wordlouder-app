@@ -235,6 +235,32 @@
           language: "en_us"
         });
 
+        // Seed recognizable default keycodes for immediate visual clarity
+        if (result.newProfile && result.newProfile.layers && result.newProfile.layers[0]) {
+          const layer = result.newProfile.layers[0];
+          if (layer.layout && layer.layout.base) {
+            const defaultMicroKeys = [
+              ["KC_ESC", "KC_TAB"],
+              ["KC_Q", "KC_W", "KC_E", "KC_R"],
+              ["KC_A", "KC_S", "KC_D", "KC_F"],
+              ["KC_Z", "KC_X", "KC_C"]
+            ];
+            layer.layout.base.forEach((row, rIdx) => {
+              row.forEach((key, cIdx) => {
+                if (defaultMicroKeys[rIdx] && defaultMicroKeys[rIdx][cIdx]) {
+                  key.keycode = defaultMicroKeys[rIdx][cIdx];
+                }
+              });
+            });
+          }
+          if (layer.layout && layer.layout.encoders && layer.layout.encoders[0]) {
+            const enc = layer.layout.encoders[0];
+            if (enc[0]) enc[0].keycode = "KC_VOLU";
+            if (enc[1]) enc[1].keycode = "KC_VOLD";
+            if (enc[2]) enc[2].keycode = "KC_MPLY";
+          }
+        }
+
         console.log("[Simulation] Mounted hardware profile:", activeDevice.name, result);
 
         window.__WL_STORE__.setState({
