@@ -1,5 +1,6 @@
 // Work Louder Web Standalone Simulation Bridge
 // Fully standalone - runs 100% in any web browser without Electron or backend server
+// Seamless native integration: no floating bars, native top-bar tabs & device dropdown
 
 (function () {
   console.log(
@@ -8,7 +9,7 @@
   );
 
   const mockDevices = {
-    creator_micro_v2: {
+    1: {
       id: 1,
       name: "Creator Micro V2",
       deviceType: "creator_micro_v2",
@@ -28,7 +29,7 @@
         fwVersion: "1.0.0"
       }
     },
-    nomad_e: {
+    2: {
       id: 2,
       name: "Nomad [E]",
       deviceType: "nomad_e",
@@ -48,7 +49,7 @@
         fwVersion: "1.0.0"
       }
     },
-    knob: {
+    3: {
       id: 3,
       name: "Work Louder Knob",
       deviceType: "knob",
@@ -70,7 +71,9 @@
     }
   };
 
-  let activeDevice = mockDevices.creator_micro_v2;
+  const allDevicesList = Object.values(mockDevices);
+  let activeId = 1;
+  let activeDevice = mockDevices[activeId];
 
   window.commonChannel = {
     platform: "win32",
@@ -106,12 +109,12 @@
   let deviceListeners = [];
 
   window.devicesManagerChannel = {
-    searchDevices: () => Promise.resolve(Object.values(mockDevices)),
-    getDevices: () => Promise.resolve(Object.values(mockDevices)),
+    searchDevices: () => Promise.resolve(allDevicesList),
+    getDevices: () => Promise.resolve(allDevicesList),
     getBootloaderDevices: () => Promise.resolve([]),
     onDevicesFound: (cb) => {
       deviceListeners.push(cb);
-      setTimeout(() => cb(Object.values(mockDevices)), 150);
+      setTimeout(() => cb(allDevicesList), 100);
       return () => {
         deviceListeners = deviceListeners.filter((l) => l !== cb);
       };
@@ -126,9 +129,16 @@
   window.connectedDeviceChannel = {
     isConnected: () => Promise.resolve(true),
     getFileFetchStatus: () => Promise.resolve(2), // 2 = EA.fetched
-    getConnectedDevice: () => Promise.resolve(activeDevice),
+    getConnectedDevice: (id) => Promise.resolve(mockDevices[id] || activeDevice),
     getFirmwareInfo: () => Promise.resolve({ version: "1.0.0" }),
-    connect: () => Promise.resolve(true),
+    connect: (id) => {
+      if (id && mockDevices[id]) {
+        activeId = id;
+        activeDevice = mockDevices[id];
+        applyDevice(activeDevice);
+      }
+      return Promise.resolve(true);
+    },
     disconnect: () => Promise.resolve(),
     onConnectionEvents: () => () => {},
     onFileFetchEvents: (cb) => {
@@ -209,9 +219,10 @@
     onUpdateDownloaded: () => () => {}
   };
 
-  function applyDevice(type) {
-    activeDevice = mockDevices[type] || mockDevices.creator_micro_v2;
-    deviceListeners.forEach((cb) => cb(Object.values(mockDevices)));
+  function applyDevice(dev) {
+    activeDevice = dev;
+    activeId = dev.id;
+    deviceListeners.forEach((cb) => cb(allDevicesList));
 
     if (window.__WL_STORE__ && window.__WL_FACTORY__) {
       try {
@@ -224,7 +235,7 @@
           language: "en_us"
         });
 
-        console.log("[Simulation] Applied device profile:", activeDevice.name, result);
+        console.log("[Simulation] Mounted hardware profile:", activeDevice.name, result);
 
         window.__WL_STORE__.setState({
           phase: "completed",
@@ -254,98 +265,11 @@
       if (window.__WL_STORE__ && window.__WL_FACTORY__) {
         clearInterval(interval);
         console.log("[Simulation] Engine ready! Mounting default hardware UI...");
-        applyDevice("creator_micro_v2");
+        applyDevice(mockDevices[1]); // Default to Creator Micro V2
       }
       if (attempts > 50) clearInterval(interval);
     }, 100);
   }
 
   initAutoConnect();
-
-  // Floating Simulator Navigation Bar
-  window.addEventListener("DOMContentLoaded", () => {
-    const hud = document.createElement("div");
-    hud.id = "wl-sim-hud";
-    hud.style.position = "fixed";
-    hud.style.bottom = "14px";
-    hud.style.right = "14px";
-    hud.style.zIndex = "99999999";
-    hud.style.background = "rgba(24, 24, 27, 0.95)";
-    hud.style.backdropFilter = "blur(16px)";
-    hud.style.border = "1px solid rgba(82, 82, 91, 0.8)";
-    hud.style.borderRadius = "12px";
-    hud.style.padding = "8px 14px";
-    hud.style.boxShadow = "0 20px 40px -10px rgba(0, 0, 0, 0.7), 0 0 1px rgba(255, 255, 255, 0.2)";
-    hud.style.display = "flex";
-    hud.style.alignItems = "center";
-    hud.style.gap = "8px";
-    hud.style.fontFamily = "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
-    hud.style.fontSize = "12px";
-    hud.style.color = "#f4f4f5";
-    hud.style.userSelect = "none";
-
-    hud.innerHTML = `
-      <div style="display: flex; align-items: center; gap: 6px;">
-        <span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #22c55e; box-shadow: 0 0 8px #22c55e;"></span>
-        <span style="font-weight: 700; color: #38bdf8;">SIMULATOR</span>
-      </div>
-
-      <div style="height: 18px; width: 1px; background: #3f3f46; margin: 0 4px;"></div>
-
-      <span style="color: #a1a1aa;">Tabs:</span>
-      <button class="sim-tab-btn" data-tab="Keymap" style="background: #2563eb; color: #fff; border: none; border-radius: 5px; padding: 4px 8px; font-size: 11px; font-weight: 600; cursor: pointer;">Keymap</button>
-      <button class="sim-tab-btn" data-tab="Preset" style="background: #3f3f46; color: #fff; border: none; border-radius: 5px; padding: 4px 8px; font-size: 11px; font-weight: 600; cursor: pointer;">Preset</button>
-      <button class="sim-tab-btn" data-tab="Settings" style="background: #3f3f46; color: #fff; border: none; border-radius: 5px; padding: 4px 8px; font-size: 11px; font-weight: 600; cursor: pointer;">Settings</button>
-      <button class="sim-tab-btn" data-tab="Widgets" style="background: #3f3f46; color: #fff; border: none; border-radius: 5px; padding: 4px 8px; font-size: 11px; font-weight: 600; cursor: pointer;">Widgets</button>
-
-      <div style="height: 18px; width: 1px; background: #3f3f46; margin: 0 4px;"></div>
-
-      <span style="color: #a1a1aa;">Device:</span>
-      <select id="sim-dev-select" style="background: #27272a; color: #fff; border: 1px solid #52525b; border-radius: 6px; padding: 4px 8px; font-size: 11px; outline: none; cursor: pointer;">
-        <option value="creator_micro_v2" selected>Creator Micro V2</option>
-        <option value="nomad_e">Nomad [E]</option>
-        <option value="knob">Work Louder Knob</option>
-      </select>
-
-      <div style="height: 18px; width: 1px; background: #3f3f46; margin: 0 4px;"></div>
-
-      <span style="color: #a1a1aa;">Screens:</span>
-      <button class="sim-nav-btn" data-hash="#/choose-device" style="background: #27272a; border: 1px solid #52525b; color: #e4e4e7; border-radius: 5px; padding: 4px 8px; font-size: 11px; font-weight: 500; cursor: pointer;">Choose Device</button>
-      <button class="sim-nav-btn" data-hash="#/wallpaper" style="background: #27272a; border: 1px solid #52525b; color: #e4e4e7; border-radius: 5px; padding: 4px 8px; font-size: 11px; font-weight: 500; cursor: pointer;">Wallpaper</button>
-      <button class="sim-nav-btn" data-hash="#/permissions-guide" style="background: #27272a; border: 1px solid #52525b; color: #e4e4e7; border-radius: 5px; padding: 4px 8px; font-size: 11px; font-weight: 500; cursor: pointer;">Permissions</button>
-      <a href="./cheat_sheet.html" target="_blank" style="background: #27272a; border: 1px solid #52525b; color: #38bdf8; text-decoration: none; border-radius: 5px; padding: 4px 8px; font-size: 11px; font-weight: 500;">Cheat Sheet ↗</a>
-      <a href="./radial_menu.html" target="_blank" style="background: #27272a; border: 1px solid #52525b; color: #38bdf8; text-decoration: none; border-radius: 5px; padding: 4px 8px; font-size: 11px; font-weight: 500;">Radial Menu ↗</a>
-    `;
-    document.body.appendChild(hud);
-
-    const sel = document.getElementById("sim-dev-select");
-    sel.addEventListener("change", (e) => {
-      applyDevice(e.target.value);
-    });
-
-    hud.querySelectorAll(".sim-nav-btn").forEach((btn) => {
-      btn.addEventListener("click", () => {
-        window.location.hash = btn.dataset.hash;
-      });
-    });
-
-    hud.querySelectorAll(".sim-tab-btn").forEach((btn) => {
-      btn.addEventListener("click", () => {
-        const tab = btn.dataset.tab;
-        if (window.location.hash !== "#/main") {
-          window.location.hash = "#/main";
-        }
-        setTimeout(() => {
-          if (typeof window.__WL_SET_TAB__ === "function") {
-            window.__WL_SET_TAB__(tab);
-          }
-        }, 50);
-
-        hud.querySelectorAll(".sim-tab-btn").forEach((b) => {
-          b.style.background = "#3f3f46";
-        });
-        btn.style.background = "#2563eb";
-      });
-    });
-  });
 })();
