@@ -24,6 +24,7 @@
         isCharging: false,
         selectedProfileIndex: 0,
         selectedLayerIndex: 1,
+        firmwareVersion: "1.0.0",
         fwVersion: "1.0.0"
       }
     },
@@ -43,6 +44,7 @@
         isCharging: false,
         selectedProfileIndex: 0,
         selectedLayerIndex: 1,
+        firmwareVersion: "1.0.0",
         fwVersion: "1.0.0"
       }
     },
@@ -62,6 +64,7 @@
         isCharging: false,
         selectedProfileIndex: 0,
         selectedLayerIndex: 1,
+        firmwareVersion: "1.0.0",
         fwVersion: "1.0.0"
       }
     }
@@ -90,7 +93,10 @@
       Promise.resolve({
         showedAnalyticsPopUp: true,
         analyticsEnabled: false,
-        autoCheckUpdates: false
+        autoCheckUpdates: false,
+        smartActionCmdEnabled: true,
+        deviceNotificationsEnabled: true,
+        autoStartupEnabled: false
       }),
     saveAppSettings: () => Promise.resolve(),
     onShortcutTriggered: () => () => {},
@@ -286,6 +292,14 @@
 
       <div style="height: 18px; width: 1px; background: #3f3f46; margin: 0 4px;"></div>
 
+      <span style="color: #a1a1aa;">Tabs:</span>
+      <button class="sim-tab-btn" data-tab="Keymap" style="background: #2563eb; color: #fff; border: none; border-radius: 5px; padding: 4px 8px; font-size: 11px; font-weight: 600; cursor: pointer;">Keymap</button>
+      <button class="sim-tab-btn" data-tab="Preset" style="background: #3f3f46; color: #fff; border: none; border-radius: 5px; padding: 4px 8px; font-size: 11px; font-weight: 600; cursor: pointer;">Preset</button>
+      <button class="sim-tab-btn" data-tab="Settings" style="background: #3f3f46; color: #fff; border: none; border-radius: 5px; padding: 4px 8px; font-size: 11px; font-weight: 600; cursor: pointer;">Settings</button>
+      <button class="sim-tab-btn" data-tab="Widgets" style="background: #3f3f46; color: #fff; border: none; border-radius: 5px; padding: 4px 8px; font-size: 11px; font-weight: 600; cursor: pointer;">Widgets</button>
+
+      <div style="height: 18px; width: 1px; background: #3f3f46; margin: 0 4px;"></div>
+
       <span style="color: #a1a1aa;">Device:</span>
       <select id="sim-dev-select" style="background: #27272a; color: #fff; border: 1px solid #52525b; border-radius: 6px; padding: 4px 8px; font-size: 11px; outline: none; cursor: pointer;">
         <option value="creator_micro_v2" selected>Creator Micro V2</option>
@@ -296,10 +310,9 @@
       <div style="height: 18px; width: 1px; background: #3f3f46; margin: 0 4px;"></div>
 
       <span style="color: #a1a1aa;">Screens:</span>
-      <button class="sim-nav-btn" data-hash="#/main" style="background: #3f3f46; color: #fff; border: none; border-radius: 5px; padding: 4px 8px; font-size: 11px; font-weight: 500; cursor: pointer;">Main</button>
-      <button class="sim-nav-btn" data-hash="#/choose-device" style="background: #3f3f46; color: #fff; border: none; border-radius: 5px; padding: 4px 8px; font-size: 11px; font-weight: 500; cursor: pointer;">Choose Device</button>
-      <button class="sim-nav-btn" data-hash="#/wallpaper" style="background: #3f3f46; color: #fff; border: none; border-radius: 5px; padding: 4px 8px; font-size: 11px; font-weight: 500; cursor: pointer;">Wallpaper</button>
-      <button class="sim-nav-btn" data-hash="#/permissions-guide" style="background: #3f3f46; color: #fff; border: none; border-radius: 5px; padding: 4px 8px; font-size: 11px; font-weight: 500; cursor: pointer;">Permissions</button>
+      <button class="sim-nav-btn" data-hash="#/choose-device" style="background: #27272a; border: 1px solid #52525b; color: #e4e4e7; border-radius: 5px; padding: 4px 8px; font-size: 11px; font-weight: 500; cursor: pointer;">Choose Device</button>
+      <button class="sim-nav-btn" data-hash="#/wallpaper" style="background: #27272a; border: 1px solid #52525b; color: #e4e4e7; border-radius: 5px; padding: 4px 8px; font-size: 11px; font-weight: 500; cursor: pointer;">Wallpaper</button>
+      <button class="sim-nav-btn" data-hash="#/permissions-guide" style="background: #27272a; border: 1px solid #52525b; color: #e4e4e7; border-radius: 5px; padding: 4px 8px; font-size: 11px; font-weight: 500; cursor: pointer;">Permissions</button>
       <a href="./cheat_sheet.html" target="_blank" style="background: #27272a; border: 1px solid #52525b; color: #38bdf8; text-decoration: none; border-radius: 5px; padding: 4px 8px; font-size: 11px; font-weight: 500;">Cheat Sheet ↗</a>
       <a href="./radial_menu.html" target="_blank" style="background: #27272a; border: 1px solid #52525b; color: #38bdf8; text-decoration: none; border-radius: 5px; padding: 4px 8px; font-size: 11px; font-weight: 500;">Radial Menu ↗</a>
     `;
@@ -313,6 +326,25 @@
     hud.querySelectorAll(".sim-nav-btn").forEach((btn) => {
       btn.addEventListener("click", () => {
         window.location.hash = btn.dataset.hash;
+      });
+    });
+
+    hud.querySelectorAll(".sim-tab-btn").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const tab = btn.dataset.tab;
+        if (window.location.hash !== "#/main") {
+          window.location.hash = "#/main";
+        }
+        setTimeout(() => {
+          if (typeof window.__WL_SET_TAB__ === "function") {
+            window.__WL_SET_TAB__(tab);
+          }
+        }, 50);
+
+        hud.querySelectorAll(".sim-tab-btn").forEach((b) => {
+          b.style.background = "#3f3f46";
+        });
+        btn.style.background = "#2563eb";
       });
     });
   });
