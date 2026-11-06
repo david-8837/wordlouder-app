@@ -16,15 +16,24 @@ This guide provides an end-to-end breakdown of every screen, feature, data model
    - [2.7 Permissions Guide](#27-permissions-guide)
    - [2.8 Cheat Sheet HUD Overlay](#28-cheat-sheet-hud-overlay)
    - [2.9 Radial Pie Menu Overlay](#29-radial-pie-menu-overlay)
-3. [Internal Architecture & Data Models](#3-internal-architecture--data-models)
-   - [3.1 Zustand Store Architecture](#31-zustand-store-architecture)
-   - [3.2 The Keyboard Factory](#32-the-keyboard-factory)
-   - [3.3 Keycode & Action Taxonomy](#33-keycode--action-taxonomy)
-4. [How the Mock Bridge Works (`mock_bridge.js`)](#4-how-the-mock-bridge-works)
-5. [Reusing This UI for Your Custom DIY Macro Pad](#5-reusing-this-ui-for-your-custom-diy-macro-pad)
-   - [5.1 WebHID Integration Architecture](#51-webhid-integration-architecture)
-   - [5.2 Communication Protocol (Raw HID Packets)](#52-communication-protocol-raw-hid-packets)
-   - [5.3 Firmware Implementation Guide (QMK / RP2040 Arduino)](#53-firmware-implementation-guide-qmk--rp2040-arduino)
+3. [Core Functional Modules & Mechanics](#3-core-functional-modules--mechanics)
+   - [3.1 Device Detection and Connection Status](#31-device-detection-and-connection-status)
+   - [3.2 Key Assignment Interface](#32-key-assignment-interface)
+   - [3.3 Layer / Channel Management](#33-layer--channel-management)
+   - [3.4 Rotary Encoder Configuration](#34-rotary-encoder-configuration)
+   - [3.5 RGB Lighting Customization](#35-rgb-lighting-customization)
+   - [3.6 Profile Saving and Loading](#36-profile-saving-and-loading)
+   - [3.7 Configuration File Formats](#37-configuration-file-formats)
+4. [Internal Architecture & Data Models](#4-internal-architecture--data-models)
+   - [4.1 Zustand Store Architecture](#41-zustand-store-architecture)
+   - [4.2 The Keyboard Factory](#42-the-keyboard-factory)
+   - [4.3 Keycode & Action Taxonomy](#43-keycode--action-taxonomy)
+5. [How the Mock Bridge Works (`mock_bridge.js`)](#5-how-the-mock-bridge-works)
+6. [Reusing This UI for Your Custom DIY Macro Pad](#6-reusing-this-ui-for-your-custom-diy-macro-pad)
+   - [6.1 WebHID Integration Architecture](#61-webhid-integration-architecture)
+   - [6.2 Communication Protocol (Raw HID Packets)](#62-communication-protocol-raw-hid-packets)
+   - [6.3 Firmware Implementation Guide (QMK / RP2040 Arduino)](#63-firmware-implementation-guide-qmk--rp2040-arduino)
+7. [Summary](#7-summary)
 
 ---
 
@@ -58,10 +67,7 @@ The centerpiece of the application. It provides an interactive canvas displaying
   - Selecting a key automatically expands the **Action Drawer** from the left.
 - **Rotary Encoders / Dials**:
   - Creator Micro V2 and Knob models feature rotary knobs.
-  - Each encoder has 3 distinct assignable trigger points:
-    1. **Rotate Clockwise (CW)** (e.g., Volume Up, Zoom In, Brush Size +).
-    2. **Rotate Counter-Clockwise (CCW)** (e.g., Volume Down, Zoom Out, Brush Size -).
-    3. **Encoder Push Button** (e.g., Mute, Reset Zoom, Play/Pause).
+  - Each encoder has 3 distinct assignable trigger points (Clockwise, Counter-Clockwise, Push Button).
 - **Touch Sliders / Radial Tracks**:
   - The black vertical bar on the Creator Micro represents a capacitive slider / jog track.
   - Supports continuous scrubbing or segmented mode.
@@ -176,9 +182,278 @@ A high-speed circular on-screen menu:
 
 ---
 
-## 3. Internal Architecture & Data Models
+## 3. Core Functional Modules & Mechanics
 
-### 3.1 Zustand Store Architecture
+### 3.1 Device Detection and Connection Status
+
+The application continuously tracks connected hardware, connection health, and peripheral telemetry.
+
+```text
++-----------------------+       poll / event        +------------------------+
+| Physical Hardware /   | ------------------------> | devicesManagerChannel  |
+| Virtual Simulation    |                           | .getActiveDevice()     |
++-----------------------+                           +------------------------+
+                                                                |
+                                                                v
++-----------------------+        sync state         +------------------------+
+| UI Header Badge &     | <------------------------ | Zustand Store          |
+| Connection Indicators |                           | phase: "completed"     |
++-----------------------+                           +------------------------+
+```
+
+#### Hardware Identification Matrix:
+| Device Name | Type Identifier | USB PID | Connection Type | Matrix Layout |
+|---|---|---|---|---|
+| **Creator Micro V2** | `creator_micro_v2` | `33432` | USB HID | 13 Keys + 2 Encoders + Slider |
+| **Nomad [E]** | `nomad_e` | `33428` | USB HID | 65% ANSI/ISO + 3 Encoders + Screen |
+| **Nomad [E] V2** | `nomad_e_v2` | `33429` | USB HID | 65% ANSI/ISO Rev 2 |
+| **Work Louder Knob** | `knob` | `33507` | USB HID | 4 Dials + 4 Keys |
+| **Framer F1** | `knob_f1` | `33508` | USB HID | Custom Designer Layout |
+| **Codex Micro** | `codex_micro` | `33435` | USB HID | Compact 6-Key Pad |
+
+#### Connection Lifecycle & Telemetry:
+1. **Enumeration**: Handled via `devicesManagerChannel.getDevices()`. The app queries available USB endpoints.
+2. **Phase Progression**:
+   - `reading`: Communicating with bootloader/firmware to fetch active EEPROM layout.
+   - `completed`: Profile loaded and verified; UI renders full interactive canvas.
+   - `error`: Failed USB handshake (shows retry dialog; bypassed in standalone web mode).
+3. **Telemetry Indicators**:
+   - **Battery Percentage**: Live 0–100% monitor with charging bolt glyph.
+   - **Port Status**: Displays active COM port / USB path (e.g., `COM3`, `HID_001`).
+   - **Firmware Version**: Checks for updates against release channels.
+
+---
+
+### 3.2 Key Assignment Interface
+
+The key assignment system pairs the 2D visual layout with a dynamic drawer inspector.
+
+#### Interaction Workflow:
+```text
+[ Click Keycap on Canvas ]
+            │
+            ▼
+[ Outline with Yellow Border ] ──► [ setKeySelected({ row, index, keyType }) ]
+            │
+            ▼
+[ Action Drawer Expands ] ────────► [ Displays Categories: Basic / Actions / Presets ]
+            │
+            ▼
+[ User Selects New Keycode ] ────► [ Immediate Store Update + Canvas Re-render ]
+```
+
+- **Selection State Model**:
+  ```typescript
+  interface KeySelected {
+    row: number;         // Matrix row index (-1 if none selected)
+    index: number;       // Matrix column index (-1 if none selected)
+    keyType: "base" | "encoder" | "button" | "undefined";
+  }
+  ```
+- **Live SVG Vector Rendering**:
+  - Keys with valid bindings render legible labels (`Esc`, `Tab`, `Q`, `W`) or SVG icons (Volume, Play, Arrows).
+  - Unmapped keys (`KC_NONE`) render a subtle circular plus icon (`(+)`).
+  - Merged / double-width keys (e.g., ISO Enter, 2U Space) scale dynamically based on `width` and `alignItems` layout attributes.
+
+---
+
+### 3.3 Layer / Channel Management
+
+Layers provide access to multiple functional layouts without needing extra physical switches.
+
+```text
+Layer 0 (Base):    [ Q ] [ W ] [ E ] [ R ]  ──► Default Typing
+                         │ (Hold Layer 1 Modifier)
+Layer 1 (Media):   [Play][Mute][Vol-][Vol+] ──► Creative / Audio Controls
+                         │ (Hold Layer 2 Modifier)
+Layer 2 (Numpad):  [ 7 ] [ 8 ] [ 9 ] [ / ]  ──► Numeric Keypad
+```
+
+#### Layer Mechanics:
+1. **Layer Hierarchy**:
+   - **Layer 0**: Base layer active by default.
+   - **Layer 1–7**: Overlay layers evaluated from top to bottom.
+2. **Layer Switching Modes**:
+   - **Momentary (`KI_LM1` / `KI_LM2`)**: Layer remains active only while holding down the trigger key; returns to base layer immediately upon release.
+   - **Toggle (`TO(layer)`)**: Pressing the key toggles the target layer on or off persistently.
+   - **Layer Tap (`LT(layer, keycode)`)**: Tapping fires a regular key (e.g. Space), holding switches layer.
+3. **Per-Layer Styling**:
+   - Each layer carries its own `name` (e.g., "Gaming", "Photoshop", "Numpad") and `color` (hex string).
+   - The selected layer color accents the top layer indicator pill and configures the hardware backlighting tone.
+
+---
+
+### 3.4 Rotary Encoder Configuration
+
+Rotary encoders are treated as **3 independent logical buttons** packed into a single physical component.
+
+```text
+                    ┌─────────────────────────┐
+                    │      Rotary Encoder     │
+                    └────────────┬────────────┘
+                                 │
+         ┌───────────────────────┼───────────────────────┐
+         ▼                       ▼                       ▼
+   [ Turn Left / CCW ]     [ Push Down / Click ]   [ Turn Right / CW ]
+   Keycode: KC_VOLD        Keycode: KC_MUTE        Keycode: KC_VOLU
+   Action: Volume Down     Action: Audio Mute      Action: Volume Up
+```
+
+#### Encoder Data Representation:
+In the layout schema, encoders are stored as an array of triplets:
+```json
+"encoders": [
+  [
+    { "keycode": "KC_VOLD" },
+    { "keycode": "KC_VOLU" },
+    { "keycode": "KC_MUTE" }
+  ]
+]
+```
+- **Index 0**: Counter-Clockwise (CCW) rotation event.
+- **Index 1**: Clockwise (CW) rotation event.
+- **Index 2**: Physical center switch push / click event.
+- **Detent Resolution**: In firmware, every tactile mechanical "click" (detent) dispatches either 1 or 2 quadrature pulses, immediately firing the assigned keycode or macro.
+
+---
+
+### 3.5 RGB Lighting Customization
+
+The RGB lighting module controls addressable SK6812 / WS2812B LEDs embedded beneath individual key switches and encoder rings.
+
+#### Supported Lighting Modes:
+| Mode | Value | Description |
+|---|---|---|
+| **Solid** | `0` | Uniform static illumination using the user's selected hex color. |
+| **Breathing** | `1` | Smooth sine-wave brightness pulsation between 0% and 100%. |
+| **Reactive** | `2` | LEDs remain off; pressing a key illuminates it instantly with a gentle fade. |
+| **Wave / Rainbow** | `3` | Multi-colored spectral wave traveling across the matrix. |
+| **Off** | `4` | LEDs powered down completely to conserve power. |
+
+#### Lighting Control Properties:
+```typescript
+interface LightingConfig {
+  effect: LightingEffect;    // 0: Solid, 1: Breathing, etc.
+  brightness: number;        // Float 0.0 to 1.0 (maps to hardware PWM 0-255)
+  speed: number;             // Animation cycle rate (0.1 to 2.0)
+  color: string;             // Hex code (e.g. "#FF5500")
+  perLayerColor: boolean;    // If true, LED color automatically tracks the active layer color
+}
+```
+
+---
+
+### 3.6 Profile Saving and Loading
+
+Profiles preserve complete snapshots of the hardware state.
+
+#### Lifecycle & Synchronization:
+```text
+[ User edits key / layer / lighting ]
+                │
+                ▼
+[ In-Memory Zustand Store updated instantly ]
+                │
+                ▼
+[ Click "Save" or auto-save ]
+                ├──► [ 1. Cached to browser localStorage ("wl_profiles") ]
+                └──► [ 2. Transmitted via HID packet to Microcontroller Flash ]
+```
+
+- **Undo / Redo Stack**:
+  - The configurator maintains a historical transaction delta stack.
+  - Keyboard shortcuts (`Ctrl+Z` / `Cmd+Z`, `Ctrl+Y` / `Cmd+Y`) invoke `P.triggerProfileUndo()` and `P.triggerProfileRedo()`.
+- **Exporting & Sharing**:
+  - Profiles can be exported directly as `.json` files.
+  - Importing a JSON file parses the structure, validates keycodes, and applies it to the active device profile.
+
+---
+
+### 3.7 Configuration File Formats
+
+Profiles are exchanged and stored using a clean, human-readable JSON schema.
+
+#### Complete Sample Profile JSON:
+```json
+{
+  "id": 0,
+  "name": "Creative Suite Master",
+  "deviceType": "creator_micro_v2",
+  "layers": [
+    {
+      "id": 0,
+      "name": "Photoshop Editing",
+      "color": "#38BDF8",
+      "layout": {
+        "base": [
+          [
+            { "keycode": "KC_ESC" },
+            { "keycode": "KC_TAB" }
+          ],
+          [
+            { "keycode": "KC_Q" },
+            { "keycode": "KC_W" },
+            { "keycode": "KC_E" },
+            { "keycode": "KC_R" }
+          ],
+          [
+            { "keycode": "KC_A" },
+            { "keycode": "KC_S" },
+            { "keycode": "KC_D" },
+            { "keycode": "KC_F" }
+          ],
+          [
+            { "keycode": "KC_Z" },
+            { "keycode": "KC_X" },
+            { "keycode": "KC_C" }
+          ]
+        ],
+        "encoders": [
+          [
+            { "keycode": "KC_VOLD" },
+            { "keycode": "KC_VOLU" },
+            { "keycode": "KC_MPLY" }
+          ]
+        ],
+        "joystick": {
+          "type": "RADIAL",
+          "sectors": [
+            { "k": "KI_X", "a1": 0.1875, "a2": 0.3125 },
+            { "k": "KC_NONE", "a1": 0.3125, "a2": 0.1875 }
+          ]
+        }
+      }
+    }
+  ],
+  "actions": [
+    {
+      "id": 1,
+      "name": "Smart Export",
+      "color": "#10B981",
+      "keyInputs": [
+        { "keycode": "KC_LGUI", "delay": 0, "actionType": 1 },
+        { "keycode": "KC_LSFT", "delay": 0, "actionType": 1 },
+        { "keycode": "KC_E", "delay": 20, "actionType": 2 }
+      ]
+    }
+  ],
+  "multiactions": [],
+  "smartActions": [
+    {
+      "id": 1,
+      "name": "Open Figma",
+      "type": "urlStep",
+      "payload": { "url": "https://figma.com" }
+    }
+  ]
+}
+```
+
+---
+
+## 4. Internal Architecture & Data Models
+
+### 4.1 Zustand Store Architecture
 The entire application state is managed by a centralized Zustand store exposed globally at `window.__WL_STORE__`.
 
 Key state properties:
@@ -207,7 +482,7 @@ window.__WL_STORE__.setState({ layerSelected: 1 });
 
 ---
 
-### 3.2 The Keyboard Factory
+### 4.2 The Keyboard Factory
 The `KeyboardFactory` (exposed globally at `window.__WL_FACTORY__`) is the core engine responsible for instantiating profile models:
 ```javascript
 const factory = window.__WL_FACTORY__.instance;
@@ -224,7 +499,7 @@ const profile = factory.createProfile({
 
 ---
 
-### 3.3 Keycode & Action Taxonomy
+### 4.3 Keycode & Action Taxonomy
 
 Work Louder uses structured string keycodes based on QMK conventions:
 
@@ -239,7 +514,7 @@ Work Louder uses structured string keycodes based on QMK conventions:
 
 ---
 
-## 4. How the Mock Bridge Works (`mock_bridge.js`)
+## 5. How the Mock Bridge Works (`mock_bridge.js`)
 
 In the native desktop app, the frontend communicates with the Electron Main process via `window.electronAPI`. 
 
@@ -275,11 +550,11 @@ Because every channel returns valid asynchronous Promises, the UI behaves identi
 
 ---
 
-## 5. Reusing This UI for Your Custom DIY Macro Pad
+## 6. Reusing This UI for Your Custom DIY Macro Pad
 
 You can take this exact web interface and use it as the web configurator for your own custom physical macro pad!
 
-### 5.1 WebHID Integration Architecture
+### 6.1 WebHID Integration Architecture
 
 Modern browsers (Chrome, Edge, Opera) support the **WebHID API** (`navigator.hid`). This allows a web page to directly open a USB HID connection to a microcontroller without installing any drivers!
 
@@ -318,7 +593,7 @@ async function sendKeymapToHardware(hidDevice, layerIndex, keyIndex, keycode) {
 
 ---
 
-### 5.2 Communication Protocol (Raw HID Packets)
+### 6.2 Communication Protocol (Raw HID Packets)
 
 For DIY firmware (QMK, Arduino, CircuitPython), recommend using a standard 32-byte or 64-byte Raw HID report:
 
@@ -339,7 +614,7 @@ Common Command IDs:
 
 ---
 
-### 5.3 Firmware Implementation Guide (QMK / RP2040 Arduino)
+### 6.3 Firmware Implementation Guide (QMK / RP2040 Arduino)
 
 #### Arduino / RP2040 (`Adafruit_TinyUSB`):
 ```cpp
@@ -387,7 +662,7 @@ void raw_hid_receive(uint8_t *data, uint8_t length) {
 
 ---
 
-## 6. Summary
+## 7. Summary
 
 With this standalone distribution, you have:
 1. **A complete, production-grade frontend** for key mapping, layer management, macro creation, profile switching, and lighting controls.
