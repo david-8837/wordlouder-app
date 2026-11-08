@@ -9,19 +9,20 @@ When served locally, it runs at:
 ## 📂 Project Structure
 ```text
 worklouder-web/
-├── index.html                       # Main Work Louder keymapper & configurator
-├── cheat_sheet.html                 # Floating shortcut HUD overlay
-├── radial_menu.html                 # Circular radial pie menu overlay
-├── mock_bridge.js                   # Zero-backend browser emulation layer
-├── FEATURES_AND_ARCHITECTURE_GUIDE.md # Complete feature breakdown & DIY hardware guide
-├── favicon.ico                      # Official Work Louder icon
-├── assets/                          # Bundled JavaScript, CSS, SVGs & icons
-└── Launch_Website.bat               # 1-click launcher
+├── index.html                                    # Main Work Louder keymapper & configurator
+├── cheat_sheet.html                              # Floating shortcut HUD overlay
+├── radial_menu.html                              # Circular radial pie menu overlay
+├── mock_bridge.js                                # Zero-backend browser emulation layer
+├── CUSTOM_MACROPAD_INPUT_SOFTWARE_ARCHITECTURE.md # Master guide: How to build software & firmware for your custom pad
+├── FEATURES_AND_ARCHITECTURE_GUIDE.md            # Complete feature breakdown & DIY hardware guide
+├── favicon.ico                                   # Official Work Louder icon
+├── assets/                                       # Bundled JavaScript, CSS, SVGs & icons
+└── Launch_Website.bat                            # 1-click launcher
 ```
 
-## 📖 In-Depth Documentation & DIY Hardware Guide
-For an exhaustive breakdown of every screen, data model, state store, and how to connect this frontend to your own physical custom macro pad (RP2040, Arduino, QMK via WebHID), see:
-👉 **[FEATURES_AND_ARCHITECTURE_GUIDE.md](FEATURES_AND_ARCHITECTURE_GUIDE.md)**
+## 📖 In-Depth Documentation & DIY Hardware Guides
+- 🛠️ **[CUSTOM_MACROPAD_INPUT_SOFTWARE_ARCHITECTURE.md](CUSTOM_MACROPAD_INPUT_SOFTWARE_ARCHITECTURE.md)**: Exhaustive engineering guide on how input software handles **Keymapping, Actions, Multi-Actions, and Smart Actions** for **any number of keys** (3x3 9 keys, 4x4 16 keys, etc.), complete with RP2040 C++ firmware and WebHID JavaScript code.
+- 📋 **[FEATURES_AND_ARCHITECTURE_GUIDE.md](FEATURES_AND_ARCHITECTURE_GUIDE.md)**: Breakdown of all screens, state store, RGB lighting, and configuration formats.
 
 ## 🛠 Features Included
 - **No Backend / No Electron Required**: Runs in any modern browser (Chrome, Edge, Firefox, Safari).
