@@ -9,18 +9,20 @@ When served locally, it runs at:
 ## 📂 Project Structure
 ```text
 worklouder-web/
-├── index.html                                    # Main Work Louder keymapper & configurator
-├── cheat_sheet.html                              # Floating shortcut HUD overlay
-├── radial_menu.html                              # Circular radial pie menu overlay
-├── mock_bridge.js                                # Zero-backend browser emulation layer
-├── CUSTOM_MACROPAD_INPUT_SOFTWARE_ARCHITECTURE.md # Master guide: How to build software & firmware for your custom pad
-├── FEATURES_AND_ARCHITECTURE_GUIDE.md            # Complete feature breakdown & DIY hardware guide
-├── favicon.ico                                   # Official Work Louder icon
-├── assets/                                       # Bundled JavaScript, CSS, SVGs & icons
-└── Launch_Website.bat                            # 1-click launcher
+├── index.html                                     # Main Work Louder keymapper & configurator
+├── cheat_sheet.html                               # Floating shortcut HUD overlay
+├── radial_menu.html                               # Circular radial pie menu overlay
+├── mock_bridge.js                                 # Zero-backend browser emulation layer
+├── HOW_KEYS_ARE_ASSIGNED_TO_HARDWARE.md           # Step-by-step: How keys travel from UI click to Flash memory
+├── CUSTOM_MACROPAD_INPUT_SOFTWARE_ARCHITECTURE.md # Master guide: How to build software & firmware for any key count
+├── FEATURES_AND_ARCHITECTURE_GUIDE.md             # Complete feature breakdown & DIY hardware guide
+├── favicon.ico                                    # Official Work Louder icon
+├── assets/                                        # Bundled JavaScript, CSS, SVGs & icons
+└── Launch_Website.bat                             # 1-click launcher
 ```
 
 ## 📖 In-Depth Documentation & DIY Hardware Guides
+- ⚡ **[HOW_KEYS_ARE_ASSIGNED_TO_HARDWARE.md](HOW_KEYS_ARE_ASSIGNED_TO_HARDWARE.md)**: The end-to-end code journey explaining how key assignment works (UI click -> 16-bit encoding -> 64-byte Raw HID USB packet -> Microcontroller RAM -> Non-volatile Flash storage -> Hardware keystroke output).
 - 🛠️ **[CUSTOM_MACROPAD_INPUT_SOFTWARE_ARCHITECTURE.md](CUSTOM_MACROPAD_INPUT_SOFTWARE_ARCHITECTURE.md)**: Exhaustive engineering guide on how input software handles **Keymapping, Actions, Multi-Actions, and Smart Actions** for **any number of keys** (3x3 9 keys, 4x4 16 keys, etc.), complete with RP2040 C++ firmware and WebHID JavaScript code.
 - 📋 **[FEATURES_AND_ARCHITECTURE_GUIDE.md](FEATURES_AND_ARCHITECTURE_GUIDE.md)**: Breakdown of all screens, state store, RGB lighting, and configuration formats.
 

@@ -665,3 +665,4 @@ Follow these 4 phases to complete your custom hardware and software:
 1. Use the `MacroPadController` class above to connect your web UI to the USB pad.
 2. Clicking any key in your web UI opens the Action Drawer, lets you select a keycode, and immediately dispatches `CMD_SET_KEY` over USB.
 3. Your custom macro pad is now fully programmable without ever needing to compile or reflash firmware!
+
